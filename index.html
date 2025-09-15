@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>過去問リハーサル（Anki風）</title>
+    
+    <!-- PWA関連（相対パスにしてください） -->
+    <link rel="manifest" href="./manifest.json">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    
+    <style>
+      :root{--fg:#111;--bg:#fff;--muted:#666;--card:#f7f7f7;--ok:#0b8a0b;--bad:#c62828;--accent:#1e88e5}
+        *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.6}
+            header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e5e5e5;position:sticky;top:0;background:var(--bg);z-index:9}
+                h1{margin:0;font-size:18px}
+                  header .actions{display:flex;gap:8px;align-items:center}
+                    button,.chip{cursor:pointer;border:1px solid #ddd;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px}
+                      button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+                        main{max-width:900px;margin:0 auto;padding:16px}
+                          .card{background:var(--card);border-radius:12px;padding:16px;margin:16px 0;border:1px solid #eee}
+                            .stem{font-size:18px;margin-bottom:8px}
+                              .choices{display:grid;gap:8px;margin-top:12px}
+                                .choice{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px;transition:transform .02s}
+                                  .choice:hover{transform:translateY(-1px)}
+                                    .choice.eliminated{opacity:.45;text-decoration:line-through}
+                                      .choice .label{font-weight:700;min-width:2ch}
+                                        .choice.correct{border-color:var(--ok);box-shadow:0 0 0 2px #0b8a0b22 inset}
+                                          .choice.incorrect{border-color:var(--bad);box-shadow:0 0 0 2px #c6282822 inset}
+                                            .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:13px}
+                                              .explain{white-space:pre-wrap;border-left:3px solid #ddd;padding-left:10px;margin-top:8px}
+                                                .kbd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;border:1px solid #ccc;border-radius:4px;padding:1px 4px;background:#fff}
+                                                  .footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:12px;flex-wrap:wrap}
+                                                    .rate{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:100%}
+                                                      .rate button{font-weight:700}
+                                                        .rate .again{border-color:var(--bad);color:var(--bad);background:#fff}
+                                                          .rate .hard{border-color:#f6b100;color:#8a6d00;background:#fff}
+                                                            .rate .good{border-color:#0b6ca8;color:#0b6ca8;background:#fff}
+                                                              .rate .easy{border-color:var(--ok);color:var(--ok);background:#fff}
+                                                                .small{font-size:12px;color:var(--muted)}
+                                                                  .hidden{display:none}
+                                                                    .badge{border:1px solid #ddd;border-radius:999px;padding:4px 8px;background:#fff;font-size:12px}
+                                                                      .flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+                                                                        /* モバイル確定ボタン */
+                                                                        .choice .answer-btn{margin-left:auto;padding:6px 10px;font-size:13px;border:1px solid #ddd;border-radius:8px;background:#fff}
+                                                                        </style>
+                                                                      </head>
+                                                                      <body>
+                                                                        <header>
+                                                                          <h1>過去問リハーサル（Anki風）</h1>
+                                                                          <div class="actions">
+                                                                            <span id="dueBadge" class="badge">due: 0</span>
+                                                                            <button id="btnSettings">設定</button>
+                                                                            <button id="btnExport">エクスポート</button>
+                                                                            <label class="chip" for="fileImport">インポート</label>
+                                                                            <input id="fileImport" type="file" accept="application/json" />
+                                                                          </div>
+                                                                        </header>
+                                                                        
+                                                                        <main>
+                                                                        <section id="queueEmpty" class="card hidden">
+                                                                          <div>今出題すべきカードはありません 🎉</div>
+                                                                          <div class="small">設定→ポリシー変更で将来分を含められます。</div>
+                                                                        </section>
+                                                                        
+                                                                        <section id="qCard" class="card hidden">
+                                                                        <div class="meta"><span id="qid" class="badge">#</span><span id="nextDue" class="badge">due: -</span><span id="stats" class="badge">正答率: -</span><span id="state" class="badge">state: -</span></div>
+                                                                        <div id="stem" class="stem"></div>
+                                                                        <div id="choices" class="choices"></div>
+                                                                        <div id="result" class="meta hidden"></div>
+                                                                        <div id="explain" class="explain hidden"></div>
+                                                                        
+                                                                        <div class="footer">
+                                                                          <div class="small">操作: クリックで<ins>消し線</ins> / 各選択肢の<strong>解答ボタン</strong>で確定 / キー <span class="kbd">A</span><span class="kbd">B</span><span class="kbd">C</span>… でも解答可 / 評価 <span class="kbd">1</span>=もう一度 <span class="kbd">2</span>=難しい <span class="kbd">3</span>=普通 <span class="kbd">4</span>=簡単</div>
+                                                                            <div class="rate">
+                                                                              <button id="btnAgain" class="again">1 もう一度</button>
+                                                                              <button id="btnHard"  class="hard">2 難しい</button>
+                                                                              <button id="btnGood"  class="good">3 普通</button>
+                                                                              <button id="btnEasy"  class="easy">4 簡単</button>
+                                                                            </div>
+                                                                          </div>
+                                                                        </section>
+                                                                        
+                                                                        <section id="settingsCard" class="card hidden">
+                                                                          <h3>設定（Anki風）</h3>
+                                                                          <div class="flex">
+                                                                            <label>学習ステップ(分)：
+                                                                              <input id="setLearnSteps" type="text" value="1,10" />
+                                                                            </label>
+                                                                            <label>卒業間隔(普通,日)：
+                                                                              <input id="setGraduateGood" type="number" min="1" value="1" />
+                                                                            </label>
+                                                                            <label>卒業間隔(簡単,日)：
+                                                                              <input id="setGraduateEasy" type="number" min="1" value="4" />
+                                                                            </label>
+                                                                          </div>
+                                                                          <div class="flex" style="margin-top:8px">
+                                                                            <label>再学習ステップ(分)：
+                                                                              <input id="setRelearnSteps" type="text" value="10" />
+                                                                            </label>
+                                                                            <label>初期Ease：
+                                                                              <input id="setEaseInit" type="number" step="0.01" value="2.5" />
+                                                                            </label>
+                                                                            <label>下限Ease：
+                                                                              <input id="setEaseMin" type="number" step="0.01" value="1.3" />
+                                                                            </label>
+                                                                          </div>
+                                                                          <div class="flex" style="margin-top:8px">
+                                                                            <label>Hard係数：
+                                                                              <input id="setHardMult" type="number" step="0.01" value="1.2" />
+                                                                            </label>
+                                                                            <label>Easyボーナス：
+                                                                              <input id="setEasyBonus" type="number" step="0.01" value="1.3" />
+                                                                            </label>
+                                                                            <label>ラプス間隔%：
+                                                                              <input id="setLapsePerc" type="number" step="0.01" value="0.5" />
+                                                                            </label>
+                                                                          </div>
+                                                                          <div class="flex" style="margin-top:8px">
+                                                                            <label><input id="policyFuture" type="checkbox" /> 将来のdueも出題する</label>
+                                                                            <label><input id="instantExplain" type="checkbox" checked /> 解答と同時に解説を表示</label>
+                                                                          </div>
+                                                                        </section>
+                                                                        </main>
+                                                                        
+                                                                        <script>
+                                                                          // ========== 共通ユーティリティ ==========
+                                                                          const now = () => new Date();
+                                                                          const iso = (d) => new Date(d).toISOString();
+                                                                          const addMinutes = (d, m) => iso(new Date(new Date(d).getTime() + m*60*1000));
+                                                                          const addDays = (d, n) => { const t=new Date(d); t.setDate(t.getDate()+n); return iso(t); };
+                                                                          const parseDate = (s) => { if(!s) return null; if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s+"T00:00:00.000Z"); return new Date(s); };
+                                                                          const todayStr = () => { const t=new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; };
+                                                                            
+                                                                            // ========== ストレージと初期データ ==========
+                                                                            const LS_KEY = 'quiz_data_v1';
+                                                                            const seedData = { version: 2, items: [] }; // 予備（読み込み失敗時に使用）
+                                                                            
+                                                                            // ★ 初回だけ anki-data.json を取り込む（同じ階層に置く）
+                                                                            async function ensureInitialData() {
+                                                                              if (localStorage.getItem(LS_KEY)) return; // 既に何か入っていれば初期取込はスキップ
+                                                                              try {
+                                                                                const res = await fetch("./anki-data.json", { cache: "no-store" });
+                                                                                if (!res.ok) throw new Error("HTTP " + res.status);
+                                                                                const obj = await res.json();
+                                                                                for (const it of (obj.items || [])) {
+                                                                                  it.state ??= "new";
+                                                                                  it.due ??= new Date().toISOString();
+                                                                                  it.interval ??= 0;
+                                                                                  it.ease ??= 2.5;
+                                                                                  it.reps ??= (it.history || []).length;
+                                                                                  it.lapses ??= 0;
+                                                                                  it.stepIndex ??= 0;
+                                                                                }
+                                                                                localStorage.setItem(LS_KEY, JSON.stringify(obj));
+                                                                              } catch (e) {
+                                                                                console.warn("anki-data.json の読み込みに失敗:", e);
+                                                                                localStorage.setItem(LS_KEY, JSON.stringify(seedData));
+                                                                              }
+                                                                            }
+                                                                            const loadData = () => { const raw=localStorage.getItem(LS_KEY); if(!raw){ localStorage.setItem(LS_KEY, JSON.stringify(seedData)); return seedData; } try{ return JSON.parse(raw); }catch{ return seedData; } };
+                                                                                const saveData = (d) => localStorage.setItem(LS_KEY, JSON.stringify(d));
+                                                                                
+                                                                                (async () => {
+                                                                                    // ★ 初期データ投入を最優先
+                                                                                    await ensureInitialData();
+                                                                                    
+                                                                                    // ====== Deck設定（Anki風） ======
+                                                                                    const cfg = {
+                                                                                      learnSteps: (localStorage.getItem('learnSteps') || '1,10').split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n)&&n>0),
+                                                                                      relearnSteps: (localStorage.getItem('relearnSteps') || '10').split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n)&&n>0),
+                                                                                      graduateGood: parseInt(localStorage.getItem('graduateGood') || '1',10),
+                                                                                      graduateEasy: parseInt(localStorage.getItem('graduateEasy') || '4',10),
+                                                                                      easeInit: parseFloat(localStorage.getItem('easeInit') || '2.5'),
+                                                                                      easeMin: parseFloat(localStorage.getItem('easeMin') || '1.3'),
+                                                                                      hardMult: parseFloat(localStorage.getItem('hardMult') || '1.2'),
+                                                                                      easyBonus: parseFloat(localStorage.getItem('easyBonus') || '1.3'),
+                                                                                      lapsePerc: parseFloat(localStorage.getItem('lapsePerc') || '0.5'),
+                                                                                      policyFuture: localStorage.getItem('policyFuture') === 'true',
+                                                                                      instantExplain: localStorage.getItem('instantExplain') !== 'false'
+                                                                                    };
+                                                                                    const persistCfg = () => {
+                                                                                      localStorage.setItem('learnSteps', cfg.learnSteps.join(','));
+                                                                                      localStorage.setItem('relearnSteps', cfg.relearnSteps.join(','));
+                                                                                      localStorage.setItem('graduateGood', cfg.graduateGood);
+                                                                                      localStorage.setItem('graduateEasy', cfg.graduateEasy);
+                                                                                      localStorage.setItem('easeInit', cfg.easeInit);
+                                                                                      localStorage.setItem('easeMin', cfg.easeMin);
+                                                                                      localStorage.setItem('hardMult', cfg.hardMult);
+                                                                                      localStorage.setItem('easyBonus', cfg.easyBonus);
+                                                                                      localStorage.setItem('lapsePerc', cfg.lapsePerc);
+                                                                                      localStorage.setItem('policyFuture', cfg.policyFuture);
+                                                                                      localStorage.setItem('instantExplain', cfg.instantExplain);
+                                                                                    };
+                                                                                    
+                                                                                    // ====== データ読込＋マイグレーション ======
+                                                                                    let data = loadData();
+                                                                                    for (const it of data.items) {
+                                                                                      if (!('state' in it)) it.state='new';
+                                                                                      if (!('due' in it)) it.due = iso(now());
+                                                                                      if (!('interval' in it)) it.interval = 0;
+                                                                                      if (!('ease' in it)) it.ease = 2.5;
+                                                                                      if (!('reps' in it)) it.reps = (it.history||[]).length;
+                                                                                      if (!('lapses' in it)) it.lapses = 0;
+                                                                                      if (!('stepIndex' in it)) it.stepIndex = 0;
+                                                                                    }
+                                                                                    saveData(data);
+                                                                                    
+                                                                                    // ====== UI参照 ======
+                                                                                    const elQCard = document.getElementById('qCard');
+                                                                                    const elQueueEmpty = document.getElementById('queueEmpty');
+                                                                                    const elStem = document.getElementById('stem');
+                                                                                    const elChoices = document.getElementById('choices');
+                                                                                    const elExplain = document.getElementById('explain');
+                                                                                    const elResult = document.getElementById('result');
+                                                                                    const elDueBadge = document.getElementById('dueBadge');
+                                                                                    const elQid = document.getElementById('qid');
+                                                                                    const elNextDue = document.getElementById('nextDue');
+                                                                                    const elStats = document.getElementById('stats');
+                                                                                    const elState = document.getElementById('state');
+                                                                                    const btnAgain = document.getElementById('btnAgain');
+                                                                                    const btnHard  = document.getElementById('btnHard');
+                                                                                    const btnGood  = document.getElementById('btnGood');
+                                                                                    const btnEasy  = document.getElementById('btnEasy');
+                                                                                    const elBtnSettings = document.getElementById('btnSettings');
+                                                                                    const elSettingsCard = document.getElementById('settingsCard');
+                                                                                    const elFileImport = document.getElementById('fileImport');
+                                                                                    const elBtnExport = document.getElementById('btnExport');
+                                                                                    
+                                                                                    const elLearnSteps = document.getElementById('setLearnSteps');
+                                                                                    const elRelearnSteps = document.getElementById('setRelearnSteps');
+                                                                                    const elGradGood = document.getElementById('setGraduateGood');
+                                                                                    const elGradEasy = document.getElementById('setGraduateEasy');
+                                                                                    const elEaseInit = document.getElementById('setEaseInit');
+                                                                                    const elEaseMin = document.getElementById('setEaseMin');
+                                                                                    const elHardMult = document.getElementById('setHardMult');
+                                                                                    const elEasyBonus = document.getElementById('setEasyBonus');
+                                                                                    const elLapsePerc = document.getElementById('setLapsePerc');
+                                                                                    const elPolicyFuture = document.getElementById('policyFuture');
+                                                                                    const elInstantExplain = document.getElementById('instantExplain');
+                                                                                    
+                                                                                    // ====== 出題キュー ======
+                                                                                    const dueNowList = () => {
+                                                                                      const t = now();
+                                                                                      const arr = data.items.filter(it => {
+                                                                                          if (cfg.policyFuture) return true;
+                                                                                          const d = parseDate(it.due);
+                                                                                          return !d || d <= t;
+                                                                                      }).sort((a,b) => (parseDate(a.due)||new Date(0)) - (parseDate(b.due)||new Date(0)));
+                                                                                      const nDue = data.items.filter(it => { const d=parseDate(it.due); return !d || d<=t; }).length;
+                                                                                      elDueBadge.textContent = `due: ${nDue}`;
+                                                                                      return arr;
+                                                                                    };
+                                                                                    
+                                                                                    let queue = [];
+                                                                                    let current = null;
+                                                                                    
+                                                                                    const updateStats = (item) => {
+                                                                                      const h=item.history||[];
+                                                                                      const correct=h.filter(e=>e.result==='correct').length;
+                                                                                      const total=h.length||0;
+                                                                                      elStats.textContent = total?`正答率: ${Math.round(correct*100/total)}%（${correct}/${total}）`:'正答率: -';
+                                                                                      elQid.textContent = `ID: ${item.id}`;
+                                                                                      elNextDue.textContent = `due: ${item.due? new Date(item.due).toLocaleString(): '-'}`;
+                                                                                      elState.textContent = `state: ${item.state}`;
+                                                                                    };
+                                                                                    
+                                                                                    const renderItem = (item) => {
+                                                                                      current = { item, locked:false, selectedKey:null, correctKey: item.choices.find(c=>c.is_correct)?.key };
+                                                                                      elQCard.classList.remove('hidden'); elQueueEmpty.classList.add('hidden');
+                                                                                      elExplain.classList.add('hidden'); elExplain.textContent = item.explanation || '';
+                                                                                      elResult.classList.add('hidden'); elResult.textContent='';
+                                                                                      elStem.textContent=item.stem;
+                                                                                      elChoices.innerHTML='';
+                                                                                      
+                                                                                      for (const ch of item.choices){
+                                                                                        const div=document.createElement('div');
+                                                                                        div.className='choice';
+                                                                                        div.dataset.key=ch.key;
+                                                                                        
+                                                                                        const lab=document.createElement('div'); lab.className='label'; lab.textContent=ch.key;
+                                                                                        const txt=document.createElement('div'); txt.textContent=ch.text;
+                                                                                        
+                                                                                        // 本体タップで消し線トグル
+                                                                                        div.addEventListener('click',()=>{ if(current.locked)return; div.classList.toggle('eliminated'); });
+                                                                                        
+                                                                                        // モバイル向け：確定ボタン
+                                                                                        const btn=document.createElement('button');
+                                                                                        btn.className='answer-btn'; btn.type='button'; btn.textContent='解答';
+                                                                                        btn.addEventListener('click',(ev)=>{ ev.stopPropagation(); if(current.locked)return; showResult(ch.key); });
+                                                                                        
+                                                                                        div.appendChild(lab); div.appendChild(txt); div.appendChild(btn);
+                                                                                        elChoices.appendChild(div);
+                                                                                      }
+                                                                                      updateStats(item);
+                                                                                    };
+                                                                                    
+                                                                                    const nextItem = () => {
+                                                                                      queue = dueNowList();
+                                                                                      if (!queue.length){ elQCard.classList.add('hidden'); elQueueEmpty.classList.remove('hidden'); return; }
+                                                                                      renderItem(queue[0]);
+                                                                                    };
+                                                                                    
+                                                                                    const showResult = (userKey) => {
+                                                                                      if (!current || current.locked) return;
+                                                                                      current.locked=true; current.selectedKey=userKey;
+                                                                                      const ok = (userKey===current.correctKey);
+                                                                                      [...elChoices.children].forEach(div=>{
+                                                                                          const k=div.dataset.key;
+                                                                                          if (k===current.correctKey) div.classList.add('correct');
+                                                                                          if (k===userKey && !ok) div.classList.add('incorrect');
+                                                                                      });
+                                                                                      elResult.classList.remove('hidden');
+                                                                                      elResult.textContent = ok ? '正解！' : `不正解…（あなたの解答: ${userKey} / 正解: ${current.correctKey}）`;
+                                                                                      if (cfg.instantExplain) elExplain.classList.remove('hidden');
+                                                                                      
+                                                                                      const it=current.item;
+                                                                                      it.history=it.history||[];
+                                                                                      it.history.push({ date: iso(now()), answer:userKey, correct:current.correctKey, result: ok?'correct':'incorrect' });
+                                                                                      it.reps += 1;
+                                                                                      saveData(data);
+                                                                                      updateStats(it);
+                                                                                    };
+                                                                                    
+                                                                                    // ====== スケジューラ（Anki風） ======
+                                                                                    function schedule(item, rating){
+                                                                                      const t = now();
+                                                                                      if (!item.ease) item.ease = cfg.easeInit;
+                                                                                      if (!item.state) item.state = 'new';
+                                                                                      if (item.ease < cfg.easeMin) item.ease = cfg.easeMin;
+                                                                                      
+                                                                                      const decEase = (d)=>{ item.ease = Math.max(cfg.easeMin, item.ease + d); };
+                                                                                      const inLearning = (item.state==='new' || item.state==='learning');
+                                                                                      const inReview   = (item.state==='review');
+                                                                                      const inRelearn  = (item.state==='relearning');
+                                                                                      const steps = (inRelearn ? cfg.relearnSteps : cfg.learnSteps);
+                                                                                      if (item.stepIndex == null) item.stepIndex = 0;
+                                                                                      
+                                                                                      if (inLearning || inRelearn){
+                                                                                        if (rating==='again'){
+                                                                                          item.stepIndex = 0;
+                                                                                          item.due = addMinutes(t, steps[0]);
+                                                                                          item.state = inLearning ? 'learning' : 'relearning';
+                                                                                          if (inRelearn){ item.lapses += 1; decEase(-0.20); }
+                                                                                          return;
+                                                                                        }
+                                                                                        if (rating==='hard'){
+                                                                                          const m = steps[Math.max(0,item.stepIndex)];
+                                                                                          item.due = addMinutes(t, Math.max(1, Math.round(m*1.2)));
+                                                                                          item.state = inLearning ? 'learning' : 'relearning';
+                                                                                          decEase(-0.15);
+                                                                                          return;
+                                                                                        }
+                                                                                        if (rating==='good'){
+                                                                                          const next = item.stepIndex + 1;
+                                                                                          if (next < steps.length){
+                                                                                            item.stepIndex = next;
+                                                                                            item.due = addMinutes(t, steps[next]);
+                                                                                            item.state = inLearning ? 'learning' : 'relearning';
+                                                                                          }else{
+                                                                                            item.state='review';
+                                                                                            item.stepIndex = 0;
+                                                                                            item.interval = cfg.graduateGood;
+                                                                                            item.due = addDays(t, item.interval);
+                                                                                          }
+                                                                                          return;
+                                                                                        }
+                                                                                        if (rating==='easy'){
+                                                                                          item.state='review';
+                                                                                          item.stepIndex=0;
+                                                                                          item.interval = cfg.graduateEasy;
+                                                                                          item.due = addDays(t, item.interval);
+                                                                                          decEase(+0.15);
+                                                                                          return;
+                                                                                        }
+                                                                                      }
+                                                                                      
+                                                                                      if (inReview){
+                                                                                        if (rating==='again'){
+                                                                                          item.lapses += 1;
+                                                                                          decEase(-0.20);
+                                                                                          item.state='relearning';
+                                                                                          item.stepIndex=0;
+                                                                                          const s = cfg.relearnSteps[0] || 10;
+                                                                                          item.due = addMinutes(t, s);
+                                                                                          item.interval = Math.max(1, Math.round(item.interval * cfg.lapsePerc));
+                                                                                          return;
+                                                                                        }
+                                                                                        if (rating==='hard'){
+                                                                                          item.interval = Math.max(1, Math.round(item.interval * cfg.hardMult));
+                                                                                          item.due = addDays(t, item.interval);
+                                                                                          decEase(-0.15);
+                                                                                          return;
+                                                                                        }
+                                                                                        if (rating==='good'){
+                                                                                          item.interval = Math.max(1, Math.round(item.interval * item.ease));
+                                                                                          item.due = addDays(t, item.interval);
+                                                                                          return;
+                                                                                        }
+                                                                                        if (rating==='easy'){
+                                                                                          item.interval = Math.max(1, Math.round(item.interval * item.ease * cfg.easyBonus));
+                                                                                          item.due = addDays(t, item.interval);
+                                                                                          decEase(+0.15);
+                                                                                          return;
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                    
+                                                                                    // ====== 評価ボタン ======
+                                                                                    function applyRating(kind){
+                                                                                      if (!current) return;
+                                                                                      const it=current.item;
+                                                                                      if (!current.locked){ showResult(current.selectedKey ?? ''); }
+                                                                                      schedule(it, kind);
+                                                                                      saveData(data);
+                                                                                      queue = queue.filter(x=>x.id!==it.id);
+                                                                                      if (queue.length) renderItem(queue[0]); else nextItem();
+                                                                                    }
+                                                                                    btnAgain.addEventListener('click', ()=>applyRating('again'));
+                                                                                    btnHard .addEventListener('click', ()=>applyRating('hard'));
+                                                                                    btnGood .addEventListener('click', ()=>applyRating('good'));
+                                                                                    btnEasy .addEventListener('click', ()=>applyRating('easy'));
+                                                                                    
+                                                                                    window.addEventListener('keydown', (e)=>{
+                                                                                        if (!current) return;
+                                                                                        const up=e.key.toUpperCase();
+                                                                                        if (/^[A-Z]$/.test(up) && !current.locked){
+                                                                                          const valid=current.item.choices.some(c=>c.key===up);
+                                                                                          if (valid) showResult(up);
+                                                                                        }
+                                                                                        if (e.key==='1') applyRating('again');
+                                                                                        if (e.key==='2') applyRating('hard');
+                                                                                        if (e.key==='3') applyRating('good');
+                                                                                        if (e.key==='4') applyRating('easy');
+                                                                                        if (e.key===' '){ e.preventDefault(); elExplain.classList.toggle('hidden'); }
+                                                                                    });
+                                                                                    
+                                                                                    // ====== 設定UI ======
+                                                                                    function syncSettingsUI(){
+                                                                                      document.getElementById('setLearnSteps').value = cfg.learnSteps.join(',');
+                                                                                      document.getElementById('setRelearnSteps').value = cfg.relearnSteps.join(',');
+                                                                                      document.getElementById('setGraduateGood').value = cfg.graduateGood;
+                                                                                      document.getElementById('setGraduateEasy').value = cfg.graduateEasy;
+                                                                                      document.getElementById('setEaseInit').value = cfg.easeInit;
+                                                                                      document.getElementById('setEaseMin').value = cfg.easeMin;
+                                                                                      document.getElementById('setHardMult').value = cfg.hardMult;
+                                                                                      document.getElementById('setEasyBonus').value = cfg.easyBonus;
+                                                                                      document.getElementById('setLapsePerc').value = cfg.lapsePerc;
+                                                                                      document.getElementById('policyFuture').checked = cfg.policyFuture;
+                                                                                      document.getElementById('instantExplain').checked = cfg.instantExplain;
+                                                                                    }
+                                                                                    function readSettingsUI(){
+                                                                                      cfg.learnSteps = document.getElementById('setLearnSteps').value.split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n)&&n>0);
+                                                                                      cfg.relearnSteps = document.getElementById('setRelearnSteps').value.split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n)&&n>0);
+                                                                                      cfg.graduateGood = parseInt(document.getElementById('setGraduateGood').value,10)||1;
+                                                                                      cfg.graduateEasy = parseInt(document.getElementById('setGraduateEasy').value,10)||4;
+                                                                                      cfg.easeInit = parseFloat(document.getElementById('setEaseInit').value)||2.5;
+                                                                                      cfg.easeMin = parseFloat(document.getElementById('setEaseMin').value)||1.3;
+                                                                                      cfg.hardMult = parseFloat(document.getElementById('setHardMult').value)||1.2;
+                                                                                      cfg.easyBonus = parseFloat(document.getElementById('setEasyBonus').value)||1.3;
+                                                                                      cfg.lapsePerc = parseFloat(document.getElementById('setLapsePerc').value)||0.5;
+                                                                                      cfg.policyFuture = document.getElementById('policyFuture').checked;
+                                                                                      cfg.instantExplain = document.getElementById('instantExplain').checked;
+                                                                                      persistCfg(); nextItem();
+                                                                                    }
+                                                                                    document.getElementById('btnSettings').addEventListener('click', ()=>{
+                                                                                        elSettingsCard.classList.toggle('hidden');
+                                                                                        if (!elSettingsCard.classList.contains('hidden')) syncSettingsUI();
+                                                                                    });
+                                                                                    elSettingsCard.addEventListener('change', readSettingsUI);
+                                                                                    
+                                                                                    // ====== Import / Export ======
+                                                                                    document.getElementById('btnExport').addEventListener('click', ()=>{
+                                                                                        const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+                                                                                        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+                                                                                        a.download=`quiz-export-${todayStr()}.json`; document.body.appendChild(a); a.click(); a.remove();
+                                                                                    });
+                                                                                    document.getElementById('fileImport').addEventListener('change', async (e)=>{
+                                                                                        const f=e.target.files?.[0]; if(!f) return;
+                                                                                        try{
+                                                                                          const txt=await f.text(); const obj=JSON.parse(txt);
+                                                                                          if (!obj.items?.length) throw new Error('items がありません');
+                                                                                          for (const it of obj.items){
+                                                                                            it.state ??= 'new'; it.due ??= iso(now()); it.interval ??= 0;
+                                                                                            it.ease ??= 2.5; it.reps ??= (it.history||[]).length; it.lapses ??= 0; it.stepIndex ??= 0;
+                                                                                          }
+                                                                                          data=obj; saveData(data);
+                                                                                          alert(`読み込み成功：${data.items.length}件`); nextItem();
+                                                                                        }catch(err){
+                                                                                          alert('JSONの形式が正しくありません: '+err.message);
+                                                                                        } finally { e.target.value=''; }
+                                                                                    });
+                                                                                    
+                                                                                    // 初期表示
+                                                                                    nextItem();
+                                                                                })(); // IIFE ここまで
+                                                                              </script>
+                                                                              
+                                                                              <!-- Service Worker 登録 -->
+                                                                              <script>
+                                                                                if ("serviceWorker" in navigator) {
+                                                                                  window.addEventListener("load", () => {
+                                                                                      navigator.serviceWorker.register("./sw.js").catch(console.error);
+                                                                                  });
+                                                                                }
+                                                                              </script>
+                                                                            </body>
+                                                                          </html>
