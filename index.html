@@ -127,6 +127,20 @@
                                                                                 </main>
                                                                                 
                                                                           <script>
+                                                                            async function loadInitialData() {
+                                                                              try {
+                                                                                const res = await fetch("./anki-data.json");
+                                                                                const data = await res.json();
+                                                                                // localStorageに保存してアプリで使えるようにする
+                                                                                localStorage.setItem("anki-quiz-data", JSON.stringify(data));
+                                                                              } catch (e) {
+                                                                                console.error("初期データ読み込み失敗:", e);
+                                                                              }
+                                                                            }
+                                                                            
+                                                                            // ページ読み込み時に呼ぶ
+                                                                            window.addEventListener("load", loadInitialData);
+
                                                                             (() => {
                                                                                 // ====== Utils ======
                                                                                 const now = () => new Date();
